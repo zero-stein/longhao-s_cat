@@ -61,11 +61,11 @@
   };
 
   // “家”——小垫子
-  const home = { x: 120, y: 0, r: 42 };
+  const home = { x: 120, y: 0, r: 29 };
 
   // 奶牛猫
   const cat = {
-    x: 210, y: 260, r: 70,
+    x: 210, y: 260, r: 30,
     vx: 0, vy: 0,
     // 眨眼/小跳
     blink: 0, blinkV: 0,
@@ -496,8 +496,8 @@
       const ddy = ty - cat.y;
       const dist = Math.hypot(ddx,ddy);
 
-      const maxV = dist > 220 ? 720 : 560;
-      const acc = 2200;
+      const maxV = dist > 220 ? 220 : 360;
+      const acc = 1200;
 
       const nx = ddx/(dist||1);
       const ny = ddy/(dist||1);
