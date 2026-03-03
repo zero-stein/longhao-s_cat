@@ -5,6 +5,23 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>奶牛猫追毛线球（点击抛球 + 拖球）</title>
   <style>
+    .title{
+    position: fixed;
+    top: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    margin: 0;
+    padding: 10px 18px;
+    font-size: clamp(22px, 3.4vw, 44px);
+    font-weight: 900;
+    letter-spacing: .06em;
+    color: #1f2a44;
+    background: rgba(255,255,255,.72);
+    backdrop-filter: blur(10px);
+    border-radius: 999px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.10);
+    pointer-events: none; /* 不挡点击/拖拽 */
+  }
     html,body{height:100%;margin:0}
     body{
       display:grid;place-items:center;overflow:hidden;
