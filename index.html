@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>奶牛猫追毛线球（点击抛球 + 拖拽）</title>
+  <title>奶牛猫追毛线球（点击抛球 + 拖球）</title>
   <style>
     html,body{height:100%;margin:0}
     body{
@@ -22,13 +22,16 @@
       padding:10px 14px;border-radius:999px;
       background:rgba(255,255,255,.75);backdrop-filter:blur(8px);
       font-size:14px;color:#1f2a44;box-shadow:0 10px 30px rgba(0,0,0,.08);
+      text-align:center;
     }
     .hint b{color:#ff4d4d}
   </style>
 </head>
 <body>
   <canvas id="c"></canvas>
-  <div class="hint">点画布抛<b>毛线球</b>；拖拽小猫；点小猫眨眼跳一下</div>
+  <div class="hint">
+    点画布抛<b>毛线球</b>；按住<b>球拖动</b>让猫追；点<b>小猫</b>眨眼跳一下
+  </div>
 
 <script>
 (() => {
@@ -58,20 +61,18 @@
   };
 
   // “家”——小垫子
-  const home = { x: 120, y: 0, r: 42 }; // y在绘制时根据地面算
+  const home = { x: 120, y: 0, r: 42 };
 
-  // 奶牛猫（几何拼）
+  // 奶牛猫
   const cat = {
     x: 210, y: 260, r: 70,
     vx: 0, vy: 0,
-    dragging: false,
     // 眨眼/小跳
     blink: 0, blinkV: 0,
     hopT: 0, hop: false,
     // 追球行为
     mode: "idle", // idle | chase | carry
     faceDir: 1,   // -1 left, 1 right
-    turn: 0,      // 转向平滑
     // 配色（奶牛猫）
     white: "#ffffff",
     black: "#1f2a44",
@@ -82,67 +83,68 @@
   const ball = {
     x: 520, y: 140, r: 22,
     vx: 0, vy: 0,
-    active: false,
+    active: true,
     carried: false,
-    target: { x: 520, y: 200 },
     // 线头摆动
     tailT: 0,
+    // ✅ 拖拽状态
     dragging: false,
     dragId: null,
   };
 
-  // Pointer
-  const pointer = { id:null, downAt:0, moved:0, px:0, py:0, ox:0, oy:0 };
+  // Pointer 状态（主要用于区分点击/拖动）
+  const pointer = { downAt:0, moved:0, px:0, py:0 };
+
   function pos(e){
     const r=canvas.getBoundingClientRect();
     return { x:e.clientX-r.left, y:e.clientY-r.top };
   }
+
   function hitCat(x,y){
     const dx=x-cat.x, dy=y-cat.y;
     return dx*dx+dy*dy <= (cat.r*1.08)*(cat.r*1.08);
   }
-
   function hitBall(x,y){
-  if(!ball.active) return false;
-  const dx = x - ball.x, dy = y - ball.y;
-  return dx*dx + dy*dy <= (ball.r*1.2)*(ball.r*1.2);
+    if(!ball.active) return false;
+    const dx=x-ball.x, dy=y-ball.y;
+    return dx*dx+dy*dy <= (ball.r*1.25)*(ball.r*1.25);
   }
-  
+
   function throwBallTo(x,y){
-    // 抛向点击点：给一个“到达时间”，反推初速度（带重力）
     const w=world.w(), h=world.h();
     const groundY = h*0.84;
 
     ball.active = true;
     ball.carried = false;
+    ball.dragging = false;
+    ball.dragId = null;
     cat.mode = "chase";
 
-    const sx = cat.x + cat.faceDir*cat.r*0.65; // 从猫身边扔出去
+    // 从猫附近扔出去（更像“抛”）
+    const sx = cat.x + cat.faceDir*cat.r*0.65;
     const sy = cat.y - cat.r*0.15;
 
     ball.x = sx; ball.y = sy;
 
-    // 目标点限制在画布内且不低于地面一点
+    // 目标点限制
     const tx = clamp(x, ball.r+8, w-ball.r-8);
     const ty = clamp(y, ball.r+8, groundY-ball.r-6);
 
-    ball.target.x = tx; ball.target.y = ty;
-
-    // 选一个飞行时间：距离越远时间越长
+    // 距离决定飞行时间
     const dx = tx - sx;
     const dy = ty - sy;
     const dist = Math.hypot(dx, dy);
     const T = clamp(dist / 520, 0.55, 1.05);
 
-    // 反推初速度：tx = sx + vx*T；ty = sy + vy*T + 0.5*g*T^2
+    // 反推初速度
     ball.vx = dx / T;
     ball.vy = (dy - 0.5*world.g*T*T) / T;
 
-    // 给点“卡通夸张”
+    // 卡通夸张一点
     ball.vx *= 1.03;
     ball.vy *= 1.05;
 
-    // 抛球瞬间猫有点兴奋
+    // 猫兴奋跳一下
     cat.hopT = 0; cat.hop = true;
   }
 
@@ -151,97 +153,83 @@
     cat.hopT = 0; cat.hop = true;
   }
 
-canvas.addEventListener("pointerdown",(e)=>{
-  const p = pos(e);
-  pointer.downAt = performance.now();
-  pointer.moved = 0;
-  pointer.px = p.x; pointer.py = p.y;
+  // ✅ 交互：按到球就拖球；否则点击画布抛球；点击猫眨眼
+  canvas.addEventListener("pointerdown",(e)=>{
+    const p=pos(e);
+    pointer.downAt=performance.now();
+    pointer.moved=0;
+    pointer.px=p.x; pointer.py=p.y;
 
-  // ✅ 先判定球：按到球就拖球
-  if (hitBall(p.x, p.y) && !ball.carried) {
-    ball.dragging = true;
-    ball.dragId = e.pointerId;
-    canvas.setPointerCapture(ball.dragId);
+    // 先判定球：按到球就拖
+    if(hitBall(p.x,p.y) && !ball.carried){
+      ball.dragging = true;
+      ball.dragId = e.pointerId;
+      canvas.setPointerCapture(ball.dragId);
 
-    // 拖球时：球跟手走、速度清零
-    ball.vx = ball.vy = 0;
-
-    // 让猫进入追逐
-    cat.mode = "chase";
-    ball.active = true;
-    return;
-  }
-
-  // 原有：按到猫就拖猫
-  if (hitCat(p.x,p.y)) {
-    pointer.id = e.pointerId;
-    canvas.setPointerCapture(pointer.id);
-    cat.dragging = true;
-    pointer.ox = cat.x - p.x;
-    pointer.oy = cat.y - p.y;
-    cat.vx *= 0.35; cat.vy *= 0.35;
-  }
-},{passive:true});
+      ball.vx = ball.vy = 0;
+      ball.active = true;
+      cat.mode = "chase";
+      return;
+    }
+  },{passive:true});
 
   canvas.addEventListener("pointermove",(e)=>{
-  const p = pos(e);
-  pointer.moved += Math.hypot(p.x-pointer.px, p.y-pointer.py);
-  pointer.px = p.x; pointer.py = p.y;
+    const p=pos(e);
+    pointer.moved += Math.hypot(p.x-pointer.px, p.y-pointer.py);
+    pointer.px=p.x; pointer.py=p.y;
 
-  // ✅ 拖球逻辑
-  if (ball.dragging && e.pointerId === ball.dragId) {
-    const w = world.w(), h = world.h();
-    const groundY = h*0.84;
-    ball.x = clamp(p.x, ball.r+8, w-ball.r-8);
-    ball.y = clamp(p.y, ball.r+8, groundY-ball.r-6);
-    ball.vx = ball.vy = 0;
+    // 拖球：球跟手走，小猫追
+    if(ball.dragging && e.pointerId === ball.dragId){
+      const w=world.w(), h=world.h();
+      const groundY = h*0.84;
 
-    // 一直让猫追
-    cat.mode = "chase";
-    return;
-  }
+      ball.x = clamp(p.x, ball.r+8, w-ball.r-8);
+      ball.y = clamp(p.y, ball.r+8, groundY-ball.r-6);
+      ball.vx = ball.vy = 0;
+
+      ball.active = true;
+      ball.carried = false;
+      cat.mode = "chase";
+      return;
+    }
   },{passive:true});
 
   canvas.addEventListener("pointerup",(e)=>{
     const p=pos(e);
     const dt=performance.now()-pointer.downAt;
     const isTap = pointer.moved<8 && dt<350;
-      const p = pos(e);
 
-    // ✅ 松开拖球
-    if (ball.dragging && e.pointerId === ball.dragId) {
+    // 松开拖球：结束拖拽（不当成“抛球”）
+    if(ball.dragging && e.pointerId === ball.dragId){
       ball.dragging = false;
       ball.dragId = null;
-      // 松手后球就停在那儿，猫会继续追并叼回家
+      // 松手后球停住，猫继续追并叼回家
       return;
     }
 
-    if(cat.dragging && e.pointerId===pointer.id){
-      cat.dragging=false;
-      pointer.id=null;
-      // 结束拖拽不做抛球
+    if(!isTap) return;
+
+    // 点击猫：眨眼/小跳
+    if(hitCat(p.x,p.y)){
+      triggerCatClick();
       return;
     }
 
-    // 没在拖猫：点击行为
-    if(isTap){
-      if(hitCat(p.x,p.y)) triggerCatClick();
-      else throwBallTo(p.x,p.y);
-    }
+    // 点击其它位置：抛球到那里
+    throwBallTo(p.x,p.y);
   },{passive:true});
 
   canvas.addEventListener("pointercancel",()=>{
-    cat.dragging=false; pointer.id=null;
+    ball.dragging=false; ball.dragId=null;
   },{passive:true});
 
-  // 绘制背景 + 垫子
+  // 背景 + 垫子
   function drawBackground(){
     const w=world.w(), h=world.h();
     const groundY = h*0.84;
 
     ctx.clearRect(0,0,w,h);
 
-    // 云
     const cloud=(cx,cy,s,a)=>{
       ctx.save(); ctx.globalAlpha=a; ctx.fillStyle="#fff";
       ctx.beginPath();
@@ -263,7 +251,7 @@ canvas.addEventListener("pointerdown",(e)=>{
     ctx.quadraticCurveTo(w*0.82,h*0.95,w,h*0.84);
     ctx.lineTo(w,h); ctx.closePath(); ctx.fill();
 
-    // “家”垫子
+    // 垫子
     home.y = groundY - 6;
     ctx.save();
     ctx.translate(home.x, home.y);
@@ -280,7 +268,7 @@ canvas.addEventListener("pointerdown",(e)=>{
     return groundY;
   }
 
-  // 画毛线球
+  // 毛线球
   function drawYarnBall(){
     if(!ball.active) return;
     ctx.save();
@@ -292,7 +280,7 @@ canvas.addEventListener("pointerdown",(e)=>{
     ctx.arc(0,0,ball.r,0,Math.PI*2);
     ctx.fill();
 
-    // 条纹（毛线感觉）
+    // 条纹
     ctx.strokeStyle="rgba(255,255,255,.85)";
     ctx.lineWidth=Math.max(2, ball.r*0.12);
     ctx.lineCap="round";
@@ -302,14 +290,14 @@ canvas.addEventListener("pointerdown",(e)=>{
       ctx.stroke();
     }
 
-    // 小高光
+    // 高光
     ctx.fillStyle="rgba(255,255,255,.75)";
     ctx.beginPath();
     ctx.ellipse(-ball.r*0.25,-ball.r*0.25, ball.r*0.22, ball.r*0.14, -0.4, 0, Math.PI*2);
     ctx.fill();
 
-    // 线头（摆动）
-    ball.tailT += 0.12;
+    // 线头摆动（拖拽时更明显）
+    ball.tailT += (ball.dragging ? 0.22 : 0.12);
     const wig = Math.sin(ball.tailT) * ball.r*0.15;
     ctx.strokeStyle="rgba(31,42,68,.5)";
     ctx.lineWidth=Math.max(1.5, ball.r*0.08);
@@ -321,8 +309,8 @@ canvas.addEventListener("pointerdown",(e)=>{
     ctx.restore();
   }
 
-  // 画奶牛猫
-  function drawCat(groundY){
+  // 奶牛猫
+  function drawCat(){
     const r = cat.r;
 
     // 小跳偏移
@@ -334,12 +322,6 @@ canvas.addEventListener("pointerdown",(e)=>{
       if(t>=1) cat.hop=false;
     }
 
-    // 转向：根据速度/目标
-    const desiredDir = (cat.mode==="chase" || cat.mode==="carry")
-      ? Math.sign((ball.x - cat.x) || cat.faceDir)
-      : Math.sign(cat.vx || cat.faceDir);
-    cat.faceDir = desiredDir===0 ? cat.faceDir : desiredDir;
-
     // 眨眼
     cat.blink = clamp(cat.blink + cat.blinkV*dt, 0, 1);
     cat.blinkV -= 28*dt;
@@ -348,7 +330,7 @@ canvas.addEventListener("pointerdown",(e)=>{
     ctx.save();
     ctx.translate(cat.x, cat.y + hopOffset);
 
-    // 身体（简单椭圆）
+    // 地面投影
     ctx.save();
     ctx.fillStyle="rgba(106,167,200,.25)";
     ctx.beginPath();
@@ -368,7 +350,7 @@ canvas.addEventListener("pointerdown",(e)=>{
     ctx.fill();
     ctx.restore();
 
-    // 头部轻微倾斜（追球更有戏）
+    // 头部微倾（随水平速度）
     const lean = clamp(cat.vx/800, -0.18, 0.18) * 0.6;
     ctx.rotate(lean);
 
@@ -399,7 +381,7 @@ canvas.addEventListener("pointerdown",(e)=>{
     ctx.fillStyle=cat.white;
     ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill();
 
-    // 奶牛斑（包住左眼 + 右脸一块）
+    // 奶牛斑
     ctx.fillStyle=cat.black;
     ctx.beginPath();
     ctx.ellipse(-r*0.30, -r*0.10, r*0.55, r*0.48, -0.35, 0, Math.PI*2);
@@ -408,7 +390,7 @@ canvas.addEventListener("pointerdown",(e)=>{
     ctx.ellipse(r*0.28, r*0.22, r*0.40, r*0.30, 0.25, 0, Math.PI*2);
     ctx.fill();
 
-    // 眼睛
+    // 眼睛（眨眼高度缩放）
     const eyeY=-r*0.08, eyeX=r*0.30;
     const eyeW=r*0.16, openH=r*0.20, closedH=r*0.03;
     const eyeH = lerp(openH, closedH, cat.blink);
@@ -424,7 +406,7 @@ canvas.addEventListener("pointerdown",(e)=>{
     ctx.beginPath(); ctx.ellipse( eyeX-r*0.05,eyeY-r*0.05,r*0.05,r*0.07,-0.2,0,Math.PI*2); ctx.fill();
     ctx.restore();
 
-    // 鼻子 + 嘴
+    // 鼻子+嘴
     ctx.fillStyle=cat.pink;
     ctx.beginPath();
     ctx.moveTo(0,r*0.10);
@@ -465,12 +447,7 @@ canvas.addEventListener("pointerdown",(e)=>{
 
   // 行为：猫追球/叼回
   function updateCatAI(groundY){
-    if(cat.dragging) return;
-
-    // 猫的“脚下”限制
-    const pad = cat.r*0.95;
-
-    // 当球被叼住：球跟随猫嘴巴位置
+    // 当球被叼住：球跟随猫
     if(ball.carried){
       const mouthX = cat.x + cat.faceDir*cat.r*0.70;
       const mouthY = cat.y + cat.r*0.25;
@@ -481,65 +458,63 @@ canvas.addEventListener("pointerdown",(e)=>{
       // 往家走
       const tx = home.x;
       const ty = home.y - cat.r*0.25;
-
       const dx = tx - cat.x;
       const dy = ty - cat.y;
       const dist = Math.hypot(dx,dy);
 
       const maxV = 520;
       const acc = 1800;
-
-      // 速度趋向目标
-      const desiredVx = (dx / (dist||1)) * maxV;
-      const desiredVy = (dy / (dist||1)) * maxV;
+      const desiredVx = (dx/(dist||1)) * maxV;
+      const desiredVy = (dy/(dist||1)) * maxV;
       cat.vx += clamp(desiredVx - cat.vx, -acc*dt, acc*dt);
       cat.vy += clamp(desiredVy - cat.vy, -acc*dt, acc*dt);
 
-      // 到家放下
       if(dist < 28){
         ball.carried = false;
         cat.mode = "idle";
-        // 放在垫子上
+        // 放到垫子附近
         ball.x = home.x + 18;
         ball.y = home.y - ball.r*0.55;
         ball.active = true;
-        // 小庆祝
+
         cat.hopT = 0; cat.hop = true;
       }
       return;
     }
 
-    // 追球：球还在动 or 停住都追
+    // 追球：拖拽中/球在动/球停住都追
     if(cat.mode === "chase" && ball.active){
+      // 面向目标
+      const dx = ball.x - cat.x;
+      cat.faceDir = (dx===0) ? cat.faceDir : Math.sign(dx);
+
+      const pad = cat.r*0.95;
       const tx = ball.x;
       const ty = clamp(ball.y, pad, groundY - pad);
 
-      const dx = tx - cat.x;
-      const dy = ty - cat.y;
-      const dist = Math.hypot(dx,dy);
+      const ddx = tx - cat.x;
+      const ddy = ty - cat.y;
+      const dist = Math.hypot(ddx,ddy);
 
-      const maxV = dist > 220 ? 220 : 360;
-      const acc = 1200;
+      const maxV = dist > 220 ? 720 : 560;
+      const acc = 2200;
 
-      // 目标速度
-      const nx = dx / (dist||1);
-      const ny = dy / (dist||1);
+      const nx = ddx/(dist||1);
+      const ny = ddy/(dist||1);
       const desiredVx = nx * maxV;
       const desiredVy = ny * maxV;
 
-      // 转向/加速度限制
       cat.vx += clamp(desiredVx - cat.vx, -acc*dt, acc*dt);
       cat.vy += clamp(desiredVy - cat.vy, -acc*dt, acc*dt);
 
-      // 追到球：叼住（距离阈值）
-      if(dist < cat.r*0.78 && Math.hypot(ball.vx, ball.vy) < 900){
+      // 追到球：叼住（拖拽中不叼，避免“抢走”）
+      if(!ball.dragging && dist < cat.r*0.78 && Math.hypot(ball.vx, ball.vy) < 900){
         ball.carried = true;
         cat.mode = "carry";
-        // 叼住瞬间眨眼一下
         cat.blinkV = 10;
       }
     } else {
-      // idle：轻微阻尼停下来
+      // idle：慢慢停
       cat.vx *= 0.94;
       cat.vy *= 0.94;
     }
@@ -549,6 +524,7 @@ canvas.addEventListener("pointerdown",(e)=>{
   function updateBall(groundY){
     if(!ball.active) return;
     if(ball.carried) return;
+    if(ball.dragging) return; // ✅ 拖拽时不受物理影响
 
     ball.vy += world.g * dt;
     ball.x += ball.vx * dt;
@@ -558,8 +534,7 @@ canvas.addEventListener("pointerdown",(e)=>{
     ball.vx *= Math.pow(world.air, dt*60);
     ball.vy *= Math.pow(world.air, dt*60);
 
-    // 边界 + 地面碰撞
-    const w=world.w(), h=world.h();
+    const w=world.w();
     const pad = ball.r + 6;
 
     // 左右墙
@@ -577,35 +552,26 @@ canvas.addEventListener("pointerdown",(e)=>{
       // 地面滚动摩擦
       ball.vx *= world.groundFric;
 
-      // 如果弹跳很小：逐渐停下
+      // 弹得很小就停
       if(Math.abs(ball.vy) < 120){
         ball.vy = 0;
-        // 更强摩擦让它停
         ball.vx *= 0.88;
-        if(Math.abs(ball.vx) < 18){
-          ball.vx = 0;
-          // 球基本停住，猫仍可追来叼走
-        }
+        if(Math.abs(ball.vx) < 18) ball.vx = 0;
       }
     }
   }
 
   // 猫自身物理
   function updateCatPhysics(groundY){
-    if(cat.dragging){
-      cat.x += cat.vx * dt;
-      cat.y += cat.vy * dt;
-      cat.vx *= 0.88; cat.vy *= 0.88;
-    } else {
-      cat.x += cat.vx * dt;
-      cat.y += cat.vy * dt;
-      // 轻微阻尼
-      cat.vx *= 0.985;
-      cat.vy *= 0.985;
-    }
+    cat.x += cat.vx * dt;
+    cat.y += cat.vy * dt;
 
-    // 边界
-    const w=world.w(), h=world.h();
+    // 阻尼
+    cat.vx *= 0.985;
+    cat.vy *= 0.985;
+
+    // 边界限制
+    const w=world.w();
     const pad = cat.r*0.95;
     cat.x = clamp(cat.x, pad, w - pad);
     cat.y = clamp(cat.y, pad, groundY - pad);
@@ -620,13 +586,13 @@ canvas.addEventListener("pointerdown",(e)=>{
     last = now;
 
     const groundY = drawBackground();
-    if (ball.dragging) return;
+
     updateBall(groundY);
     updateCatAI(groundY);
     updateCatPhysics(groundY);
 
     drawYarnBall();
-    drawCat(groundY);
+    drawCat();
 
     requestAnimationFrame(loop);
   }
