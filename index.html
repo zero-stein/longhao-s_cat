@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>点击泡泡弹来弹去</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b1220; overflow: hidden; }
+    canvas { display: block; }
+    .hint {
+      position: fixed; left: 12px; top: 12px;
+      color: rgba(255,255,255,.8); font: 14px/1.2 system-ui, -apple-system, Segoe UI, Roboto;
+      background: rgba(255,255,255,.08); padding: 10px 12px; border-radius: 12px;
+      backdrop-filter: blur(8px);
+    }
+  </style>
+</head>
+<body>
+  <div class="hint">点击泡泡：随机弹跳（支持触摸）</div>
+  <canvas id="c"></canvas>
+
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+
+    function resize() {
+      const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      canvas.width = Math.floor(window.innerWidth * dpr);
+      canvas.height = Math.floor(window.innerHeight * dpr);
+      canvas.style.width = window.innerWidth + 'px';
+      canvas.style.height = window.innerHeight + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // 用 CSS 像素绘制
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // 泡泡参数
+    const bubble = {
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+      r: 48,
+      vx: 0,
+      vy: 0,
+    };
+
+    // 物理参数
+    const damping = 0.992;     // 空气阻尼（越小越快停）
+    const minSpeed = 0.02;     // 速度很小时就当作停了
+    const bounce = 0.92;       // 碰撞反弹系数（1=完全弹性）
+    const gravity = 0.0;       // 想要有重力就设为 0.25 之类
+
+    function randBetween(a, b) { return a + Math.random() * (b - a); }
+
+    function kick() {
+      // 点击时给一个随机速度（叠加）
+      const speed = randBetween(8, 14);
+      const angle = randBetween(0, Math.PI * 2);
+      bubble.vx += Math.cos(angle) * speed;
+      bubble.vy += Math.sin(angle) * speed;
+    }
+
+    function hitTest(px, py) {
+      const dx = px - bubble.x;
+      const dy = py - bubble.y;
+      return dx * dx + dy * dy <= bubble.r * bubble.r;
+    }
+
+    function pointerPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      if (e.touches && e.touches[0]) {
+        return {
+          x: e.touches[0].clientX - rect.left,
+          y: e.touches[0].clientY - rect.top
+        };
+      }
+      return {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+      };
+    }
+
+    function onPointer(e) {
+      const {x, y} = pointerPos(e);
+      if (hitTest(x, y)) kick();
+    }
+    canvas.addEventListener('click', onPointer);
+    canvas.addEventListener('touchstart', (e) => { onPointer(e); }, { passive: true });
+
+    // 画泡泡（带高光 + 渐变）
+    function drawBubble() {
+      const { x, y, r } = bubble;
+
+      // 主体渐变
+      const g = ctx.createRadialGradient(x - r*0.35, y - r*0.45, r*0.15, x, y, r);
+      g.addColorStop(0, 'rgba(170, 230, 255, 0.85)');
+      g.addColorStop(0.55, 'rgba(90, 180, 255, 0.35)');
+      g.addColorStop(1, 'rgba(60, 120, 255, 0.18)');
+
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = g;
+      ctx.fill();
+
+      // 边缘描边
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+      ctx.stroke();
+
+      // 高光
+      ctx.beginPath();
+      ctx.ellipse(x - r*0.28, y - r*0.32, r*0.28, r*0.18, -0.35, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.fill();
+
+      // 小高光点
+      ctx.beginPath();
+      ctx.arc(x - r*0.1, y - r*0.45, r*0.06, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.fill();
+    }
+
+    function step() {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+
+      // 物理更新
+      bubble.vy += gravity;
+      bubble.x += bubble.vx;
+      bubble.y += bubble.vy;
+
+      // 边界碰撞
+      if (bubble.x - bubble.r < 0) {
+        bubble.x = bubble.r;
+        bubble.vx = Math.abs(bubble.vx) * bounce;
+      } else if (bubble.x + bubble.r > w) {
+        bubble.x = w - bubble.r;
+        bubble.vx = -Math.abs(bubble.vx) * bounce;
+      }
+
+      if (bubble.y - bubble.r < 0) {
+        bubble.y = bubble.r;
+        bubble.vy = Math.abs(bubble.vy) * bounce;
+      } else if (bubble.y + bubble.r > h) {
+        bubble.y = h - bubble.r;
+        bubble.vy = -Math.abs(bubble.vy) * bounce;
+      }
+
+      // 阻尼
+      bubble.vx *= damping;
+      bubble.vy *= damping;
+
+      // 很小就停
+      if (Math.abs(bubble.vx) < minSpeed) bubble.vx = 0;
+      if (Math.abs(bubble.vy) < minSpeed) bubble.vy = 0;
+
+      // 绘制
+      ctx.clearRect(0, 0, w, h);
+
+      // 背景点缀
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      for (let i = 0; i < 30; i++) {
+        const px = (i * 97) % w;
+        const py = (i * 151) % h;
+        ctx.beginPath();
+        ctx.arc(px, py, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      drawBubble();
+      requestAnimationFrame(step);
+    }
+
+    step();
+  </script>
+</body>
+</html>
